@@ -164,6 +164,76 @@ func NewKeyedTransactorWithChainID(key *ecdsa.PrivateKey, chainID *big.Int) (*Tr
 	}, nil
 }
 
+// NewKeyedTransactorWithChainID is a utility method to easily create a transaction signer
+// from a single private key.
+// func NewKMSTransactorWithChainID(svc *kms.KMS, keyId string, chainID *big.Int) (*TransactOpts, error) {
+// 	input := &kms.GetPublicKeyInput{
+// 		KeyId: aws.String(keyId),
+// 	}
+// 	publicKeyOutput, err := svc.GetPublicKey(input)
+// 	pubKey, _ := crypto.UnmarshalPubkey(publicKeyOutput.PublicKey)
+// 	if err != nil {
+// 		return nil, ErrNotAuthorized
+// 	}
+// 	if chainID == nil {
+// 		return nil, ErrNoChainID
+// 	}
+// 	keyAddr := crypto.PubkeyToAddress(*pubKey)
+// 	signer := types.LatestSignerForChainID(chainID)
+// 	return &TransactOpts{
+// 		From: keyAddr,
+// 		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+// 			if address != keyAddr {
+// 				return nil, ErrNotAuthorized
+// 			}
+// 			// signature, err := crypto.Sign(signer.Hash(tx).Bytes(), key)
+// 			// if err != nil {
+// 			// 	return nil, err
+// 			// }
+// 			// Encrypt the data
+// 			// sess, err := session.NewSession(&aws.Config{
+// 			// 	Region: aws.String("us-west-2")},
+// 			// )
+
+// 			// // Create KMS service client
+// 			// svc := kms.New(sess)
+// 			result, err := svc.Sign(&kms.SignInput{
+// 				KeyId:            aws.String(keyId),
+// 				MessageType:      aws.String("RAW"),
+// 				Message:          signer.Hash(tx).Bytes(),
+// 				SigningAlgorithm: aws.String("ECDSA_SHA_256"),
+// 			})
+
+// 			if err != nil {
+// 				return nil, err
+// 			}
+
+// 			fmt.Println("Blob (base-64 byte array):")
+// 			fmt.Println(result.Signature)
+// 			return tx.WithSignature(signer, result.Signature)
+// 		},
+// 		Context: context.Background(),
+// 	}, nil
+// }
+
+type KMSpubKey func() common.Address
+type KMSsign func(message []byte) []byte
+
+func NewGeneralKMSTransactorWithChainID(kmsPubKey KMSpubKey, sign KMSsign, keyId string, chainID *big.Int) (*TransactOpts, error) {
+	keyAddr := kmsPubKey()
+	signer := types.LatestSignerForChainID(chainID)
+	return &TransactOpts{
+		From: keyAddr,
+		Signer: func(address common.Address, tx *types.Transaction) (*types.Transaction, error) {
+			if address != keyAddr {
+				return nil, ErrNotAuthorized
+			}
+			return tx.WithSignature(signer, sign(signer.Hash(tx).Bytes()))
+		},
+		Context: context.Background(),
+	}, nil
+}
+
 // NewClefTransactor is a utility method to easily create a transaction signer
 // with a clef backend.
 func NewClefTransactor(clef *external.ExternalSigner, account accounts.Account) *TransactOpts {
